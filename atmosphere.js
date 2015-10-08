@@ -38,7 +38,7 @@
 
     "use strict";
 
-    var version = "2.2.12-javascript",
+    var version = "2.2.13-javascript",
         atmosphere = {},
         guid,
         offline = false,
@@ -195,6 +195,7 @@
                 ackInterval: 0,
                 closeAsync: false,
                 reconnectOnServerError: true,
+                handleOnlineOffline: true,
                 onError: function (response) {
                 },
                 onClose: function (response) {
@@ -1773,8 +1774,43 @@
                 if (url.indexOf("X-Atmosphere-Framework") !== -1) {
                     return url;
                 }
-
+                
                 url += (url.indexOf('?') !== -1) ? '&' : '?';
+                
+                if (atmosphere.util.isArray(rq.attachHeadersAsQueryString)) {
+                    if (atmosphere.util.inArray("X-Atmosphere-tracking-id", rq.attachHeadersAsQueryString) !== -1) {
+                        url += "X-Atmosphere-tracking-id=" + rq.uuid;
+                    }
+                    if (atmosphere.util.inArray("X-Atmosphere-Framework", rq.attachHeadersAsQueryString) !== -1) {
+                        url += "&X-Atmosphere-Framework=" + version;
+                    }
+                    if (atmosphere.util.inArray("X-Atmosphere-Transport", rq.attachHeadersAsQueryString) !== -1) {
+                        url += "&X-Atmosphere-Transport=" + rq.transport;
+                    }
+                    if ((atmosphere.util.inArray("X-Atmosphere-TrackMessageSize", rq.attachHeadersAsQueryString) !== -1) && rq.trackMessageLength) {
+                        url += "&X-Atmosphere-TrackMessageSize=" + "true";
+                    }
+                    if ((atmosphere.util.inArray("X-Heartbeat-Server", rq.attachHeadersAsQueryString) !== -1) && (rq.heartbeat !== null && rq.heartbeat.server !== null)) {
+                        url += "&X-Heartbeat-Server=" + rq.heartbeat.server;
+                    }
+                    if ((atmosphere.util.inArray("Content-Type", rq.attachHeadersAsQueryString) !== -1) && (rq.contentType !== '')) {
+                        url += "&Content-Type=" + (rq.transport === 'websocket' ? rq.contentType : encodeURIComponent(rq.contentType));
+                    }
+                    if ((atmosphere.util.inArray("X-atmo-protocol", rq.attachHeadersAsQueryString) !== -1) && (rq.enableProtocol)) {
+                        url += "&X-atmo-protocol=true";
+                    }
+                    
+                    atmosphere.util.each(rq.headers, function (name, value) {
+                        if (atmosphere.util.inArray(name, rq.attachHeadersAsQueryString) !== -1) {
+                            var h = atmosphere.util.isFunction(value) ? value.call(this, rq, request, _response) : value;
+                            if (h != null) {
+                                url += "&" + encodeURIComponent(name) + "=" + encodeURIComponent(h);
+                            }
+                        }
+                    });
+                    return url;
+                }
+
                 url += "X-Atmosphere-tracking-id=" + rq.uuid;
                 url += "&X-Atmosphere-Framework=" + version;
                 url += "&X-Atmosphere-Transport=" + rq.transport;
@@ -1878,10 +1914,12 @@
 
                 var reconnectFExec = function (force) {
                     rq.lastIndex = 0;
-                    if (force || (rq.reconnect && _requestCount++ < rq.maxReconnectOnClose)) {
+                    _requestCount++; // Increase also when forcing reconnect as _open checks _requestCount
+                    if (force || (rq.reconnect && _requestCount <= rq.maxReconnectOnClose)) {
+                        var delay = force ? 0 : request.reconnectInterval; // Reconnect immediately if the server resumed the connection (timeout)
                         _response.ffTryingReconnect = true;
                         _open('re-connecting', request.transport, request);
-                        _reconnect(ajaxRequest, rq, request.reconnectInterval);
+                        _reconnect(ajaxRequest, rq, delay);
                     } else {
                         _onError(0, "maxReconnectOnClose reached");
                     }
@@ -2166,8 +2204,33 @@
                         ajaxRequest.withCredentials = true;
                     }
                 }
-
-                if (!_request.dropHeaders) {
+                
+                if (atmosphere.util.isArray(_request.dropHeaders)) {
+                    if (atmosphere.util.inArray("X-Atmosphere-Framework", _request.dropHeaders) === -1) {
+                      ajaxRequest.setRequestHeader("X-Atmosphere-Framework", version);
+                    }
+                    if (atmosphere.util.inArray("X-Atmosphere-Transport", _request.dropHeaders) === -1) {
+                    ajaxRequest.setRequestHeader("X-Atmosphere-Transport", request.transport);
+                    }
+                    if ((atmosphere.util.inArray("X-Heartbeat-Server", _request.dropHeaders) === -1) && (request.heartbeat !== null && request.heartbeat.server !== null)) {
+                        ajaxRequest.setRequestHeader("X-Heartbeat-Server", ajaxRequest.heartbeat.server);
+                    }
+                    if ((atmosphere.util.inArray("X-Atmosphere-TrackMessageSize", _request.dropHeaders) === -1) && request.trackMessageLength) {
+                        ajaxRequest.setRequestHeader("X-Atmosphere-TrackMessageSize", "true");
+                    }
+                    if (atmosphere.util.inArray("X-Atmosphere-tracking-id", _request.dropHeaders) === -1) {
+                        ajaxRequest.setRequestHeader("X-Atmosphere-tracking-id", request.uuid);
+                    }
+                    
+                    atmosphere.util.each(request.headers, function (name, value) {
+                        if (atmosphere.util.inArray(name, _request.dropHeaders) === -1) {
+                            var h = atmosphere.util.isFunction(value) ? value.call(this, ajaxRequest, request, create, _response) : value;
+                            if (h != null) {
+                                ajaxRequest.setRequestHeader(name, h);
+                            }
+                        }
+                    }); 
+                } else if (!_request.dropHeaders) {
                     ajaxRequest.setRequestHeader("X-Atmosphere-Framework", version);
                     ajaxRequest.setRequestHeader("X-Atmosphere-Transport", request.transport);
 
@@ -2193,7 +2256,7 @@
                 }
             }
 
-            function _reconnect(ajaxRequest, request, reconnectInterval) {
+            function _reconnect(ajaxRequest, request, delay) {
 
                 if (_response.closedByClientTimeout) {
                     return;
@@ -2213,11 +2276,11 @@
                         delete request.reconnectId;
                     }
 
-                    if (reconnectInterval > 0) {
+                    if (delay > 0) {
                         // For whatever reason, never cancel a reconnect timeout as it is mandatory to reconnect.
                         _request.reconnectId = setTimeout(function () {
                             _executeRequest(request);
-                        }, reconnectInterval);
+                        }, delay);
                     } else {
                         _executeRequest(request);
                     }
@@ -3443,11 +3506,13 @@
             var requestsClone = [].concat(requests);
             for (var i = 0; i < requestsClone.length; i++) {
                 var rq = requestsClone[i];
-                rq.close();
-                clearTimeout(rq.response.request.id);
+                if(rq.handleOnlineOffline) {
+                    rq.close();
+                    clearTimeout(rq.response.request.id);
 
-                if (rq.heartbeatTimer) {
-                    clearTimeout(rq.heartbeatTimer);
+                    if (rq.heartbeatTimer) {
+                        clearTimeout(rq.heartbeatTimer);
+                    }
                 }
             }
         }
@@ -3457,8 +3522,10 @@
         atmosphere.util.debug(new Date() + " Atmosphere: online event");
         if (requests.length > 0) {
             for (var i = 0; i < requests.length; i++) {
-                requests[i].init();
-                requests[i].execute();
+                if(requests[i].handleOnlineOffline) {
+                    requests[i].init();
+                    requests[i].execute();
+                }
             }
         }
         offline = false;
