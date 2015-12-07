@@ -38,7 +38,7 @@
 
     "use strict";
 
-    var version = "2.2.13-javascript",
+    var version = "2.2.14-javascript",
         atmosphere = {},
         guid,
         offline = false,
@@ -1548,7 +1548,7 @@
                                 _executeWebSocket(true);
                             }
                         } else {
-                            atmosphere.util.log(_request.logLevel, ["Websocket reconnect maximum try reached " + _request.requestCount]);
+                            atmosphere.util.log(_request.logLevel, ["Websocket reconnect maximum try reached " + _requestCount]);
                             if (_canLog('warn')) {
                                 atmosphere.util.warn("Websocket error, reason: " + message.reason);
                             }
@@ -1938,10 +1938,21 @@
                 };
 
                 var disconnected = function () {
+                    var _force = false;
+                    var _now = atmosphere.util.now();
+                    var _requestTime = _request.lastReconnect || _request.ctime;
+                    
                     // Prevent onerror callback to be called
                     _response.errorHandled = true;
                     _clearState();
-                    reconnectF(false);
+                    
+                    if (_now >= _requestTime + 60000) {
+                        _request.lastReconnect = _now;
+                        _force = !!_requestCount;
+                        _requestCount = 0;
+                    }
+                    
+                    reconnectF(_force);
                 };
 
                 if (rq.force || (rq.reconnect && (rq.maxRequest === -1 || rq.requestCount++ < rq.maxRequest))) {
@@ -3132,6 +3143,10 @@
         },
 
         getAbsoluteURL: function (url) {
+            if (typeof (document.createElement) === 'undefined') {
+                // assuming the url to be already absolute when DOM is not supported
+                return url;
+            }
             var div = document.createElement("div");
 
             // Uses an innerHTML property to obtain an absolute URL
