@@ -7,6 +7,6 @@ This repository is for distribution of the [javascript client component](https:/
 bower install jfmbrennan/bower-atmosphere
 ```
 
-Current version: [2.2.14](https://raw.githubusercontent.com/jfmbrennan/atmosphere-javascript/master/modules/javascript/src/main/webapp/javascript/atmosphere.js)
+Current version: [2.3.1](https://raw.githubusercontent.com/jfmbrennan/atmosphere-javascript/master/modules/javascript/src/main/webapp/javascript/atmosphere.js)
 
 

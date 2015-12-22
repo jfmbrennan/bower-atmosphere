@@ -38,7 +38,7 @@
 
     "use strict";
 
-    var version = "2.2.14-javascript",
+    var version = "2.3.1-javascript",
         atmosphere = {},
         guid,
         offline = false,
@@ -73,6 +73,7 @@
         },
         onOpenAfterResume: function (request) {
         },
+        onBeforeUnload: undefined,
 
         /**
          * Creates an object based on an atmosphere subscription that exposes functions defined by the Websocket interface.
@@ -3443,10 +3444,11 @@
                 return true;
             }
 
-            // Force Android to use CORS as some version like 2.2.3 fail otherwise
+            // Force older Android versions to use CORS as some version like 2.2.3 fail otherwise
             var ua = navigator.userAgent.toLowerCase();
-            var isAndroid = ua.indexOf("android") > -1;
-            if (isAndroid) {
+            var androidVersionMatches = ua.match(/.+android ([0-9]{1,2})/i),
+                majorVersion = parseInt((androidVersionMatches && androidVersionMatches[0]) || -1, 10);
+            if (!isNaN(majorVersion) && majorVersion > -1 && majorVersion < 3) {
                 return true;
             }
             return false;
@@ -3494,6 +3496,10 @@
 
     atmosphere.util.on(window, "beforeunload", function (event) {
         atmosphere.util.debug(new Date() + " Atmosphere: " + "beforeunload event");
+        
+        if (typeof (atmosphere.onBeforeUnload) === 'function') {
+          atmosphere.onBeforeUnload();
+        }
 
         // ATMOSPHERE-JAVASCRIPT-143: Delay reconnect to avoid reconnect attempts before an actual unload (we don't know if an unload will happen, yet)
         atmosphere._beforeUnloadState = true;
